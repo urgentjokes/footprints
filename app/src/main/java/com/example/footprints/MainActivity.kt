@@ -5,8 +5,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.ViewModelProvider
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.core.net.toUri
@@ -98,14 +100,64 @@ import com.example.footprints.ui.theme.FootprintsTheme
 import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
+    private lateinit var viewModel: FootprintsViewModel
+    private var lastShutterTriggerTime = 0L
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        viewModel = ViewModelProvider(this)[FootprintsViewModel::class.java]
         enableEdgeToEdge()
         LocationHelper.ensureDocumentsFolderExists(this)
         setContent {
             FootprintsTheme {
-                FootprintsApp()
+                FootprintsApp(viewModel = viewModel)
             }
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        if (::viewModel.isInitialized && viewModel.listenForBluetoothShutter) {
+            val isEditingText = currentFocus is android.widget.EditText
+            if (isShutterKeyEvent(event, isEditingText)) {
+                if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                    onShutterDetected()
+                }
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    private fun isShutterKeyEvent(event: KeyEvent, isEditingText: Boolean): Boolean {
+        return when (event.keyCode) {
+            KeyEvent.KEYCODE_CAMERA,
+            KeyEvent.KEYCODE_VOLUME_UP,
+            KeyEvent.KEYCODE_VOLUME_DOWN,
+            KeyEvent.KEYCODE_HEADSETHOOK,
+            KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_PLAY,
+            KeyEvent.KEYCODE_MEDIA_PAUSE,
+            KeyEvent.KEYCODE_MEDIA_STOP,
+            KeyEvent.KEYCODE_MEDIA_NEXT,
+            KeyEvent.KEYCODE_MEDIA_PREVIOUS -> true
+            KeyEvent.KEYCODE_ENTER,
+            KeyEvent.KEYCODE_NUMPAD_ENTER,
+            KeyEvent.KEYCODE_DPAD_CENTER,
+            KeyEvent.KEYCODE_SPACE -> !isEditingText
+            else -> false
+        }
+    }
+
+    private fun onShutterDetected() {
+        val now = System.currentTimeMillis()
+        if (now - lastShutterTriggerTime < 1200L) return
+        lastShutterTriggerTime = now
+
+        Toast.makeText(this, "Camera shutter detected: recording location...", Toast.LENGTH_SHORT).show()
+        if (LocationHelper.hasLocationPermission(this)) {
+            viewModel.recordShutterLocation(this)
+        } else {
+            Toast.makeText(this, "Location permission required", Toast.LENGTH_SHORT).show()
         }
     }
 }
@@ -158,10 +210,11 @@ fun MainFootprintsScreen(
     val coroutineScope = rememberCoroutineScope()
     val autoCaptureLocation = viewModel.autoCaptureLocation
 
-    // When in auto-capture mode, ensure the display is always scrolled to the bottom (most recent capture visible)
+    // When in auto-capture mode or shutter pressed, ensure the display scrolls to the bottom
     LaunchedEffect(records.size, autoCaptureLocation) {
-        if (autoCaptureLocation && records.isNotEmpty()) {
+        if ((autoCaptureLocation || viewModel.lastRecordedFromShutter) && records.isNotEmpty()) {
             listState.animateScrollToItem(records.size - 1)
+            viewModel.lastRecordedFromShutter = false
         }
     }
 
@@ -643,6 +696,44 @@ fun SettingsScreen(
                 Switch(
                     checked = isWithMap,
                     onCheckedChange = { viewModel.setShowMapImage(context, it) }
+                )
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+
+            // Setting: "Bluetooth camera shutter" with on-off switch
+            val listenForBluetoothShutter = viewModel.listenForBluetoothShutter
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { viewModel.setListenForBluetoothShutter(context, !listenForBluetoothShutter) }
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 16.dp)
+                ) {
+                    Text(
+                        text = "Bluetooth camera shutter",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = "Record location when Bluetooth shutter or remote button is pressed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Switch(
+                    checked = listenForBluetoothShutter,
+                    onCheckedChange = { viewModel.setListenForBluetoothShutter(context, it) }
                 )
             }
 

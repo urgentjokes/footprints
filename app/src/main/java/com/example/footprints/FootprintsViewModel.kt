@@ -25,6 +25,7 @@ class FootprintsViewModel : ViewModel() {
         const val KEY_AUTO_SEND_LOCATION = "auto_send_location"
         const val KEY_AUTO_SEND_INTERVAL_MINUTES = "auto_send_interval_minutes"
         const val KEY_RUN_IN_BACKGROUND = "run_in_background"
+        const val KEY_BLUETOOTH_SHUTTER = "bluetooth_shutter"
     }
 
     val records get() = FootprintsRepository.records
@@ -33,6 +34,8 @@ class FootprintsViewModel : ViewModel() {
     var showMapImage by mutableStateOf(true)
     var autoCaptureLocation by mutableStateOf(false)
     var runInBackground by mutableStateOf(false)
+    var listenForBluetoothShutter by mutableStateOf(true)
+    var lastRecordedFromShutter by mutableStateOf(false)
     var autoCaptureIntervalText by mutableStateOf("15")
 
     var autoSendLocation: Boolean
@@ -50,6 +53,7 @@ class FootprintsViewModel : ViewModel() {
         showMapImage = prefs.getBoolean(KEY_SHOW_MAP_IMAGE, true)
         autoCaptureLocation = prefs.getBoolean(KEY_AUTO_CAPTURE_LOCATION, prefs.getBoolean(KEY_AUTO_SEND_LOCATION, false))
         runInBackground = prefs.getBoolean(KEY_RUN_IN_BACKGROUND, false)
+        listenForBluetoothShutter = prefs.getBoolean(KEY_BLUETOOTH_SHUTTER, true)
         autoCaptureIntervalText = prefs.getString(KEY_AUTO_CAPTURE_INTERVAL_MINUTES, prefs.getString(KEY_AUTO_SEND_INTERVAL_MINUTES, "15")) ?: "15"
         if (autoCaptureLocation) {
             if (runInBackground) {
@@ -58,6 +62,19 @@ class FootprintsViewModel : ViewModel() {
                 startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = false)
             }
         }
+    }
+
+    fun setListenForBluetoothShutter(context: Context, enabled: Boolean) {
+        listenForBluetoothShutter = enabled
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_BLUETOOTH_SHUTTER, enabled).apply()
+        val statusText = if (enabled) "Bluetooth shutter listening enabled" else "Bluetooth shutter listening disabled"
+        Toast.makeText(context, statusText, Toast.LENGTH_SHORT).show()
+    }
+
+    fun recordShutterLocation(context: Context) {
+        lastRecordedFromShutter = true
+        recordCurrentLocation(context)
     }
 
     fun setShowMapImage(context: Context, enabled: Boolean) {
