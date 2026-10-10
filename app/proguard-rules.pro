@@ -1,1 +1,1 @@
-# ProGuard rules for LocationLogger
+# ProGuard rules for Footprints

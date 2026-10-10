@@ -19,5 +19,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LocationLogger"
+rootProject.name = "Footprints"
 include(":app")

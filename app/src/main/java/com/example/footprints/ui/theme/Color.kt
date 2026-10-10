@@ -1,4 +1,4 @@
-package com.example.locationlogger.ui.theme
+package com.example.footprints.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

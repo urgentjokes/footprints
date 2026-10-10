@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.locationlogger"
+    namespace = "com.example.footprints"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.locationlogger"
+        applicationId = "com.example.footprints"
         minSdk = 26
         targetSdk = 35
         versionCode = 1
@@ -42,6 +42,8 @@ android {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.coil.compose)
     implementation(libs.androidx.activity.compose)
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)

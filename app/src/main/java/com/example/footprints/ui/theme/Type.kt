@@ -1,4 +1,4 @@
-package com.example.locationlogger.ui.theme
+package com.example.footprints.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
