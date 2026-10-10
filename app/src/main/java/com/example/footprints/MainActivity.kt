@@ -3,6 +3,7 @@ package com.example.footprints
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.core.content.ContextCompat
@@ -652,14 +653,28 @@ fun SettingsScreen(
             // Setting 2: "Automatically capture location" with on-off switch
             val autoCaptureLocation = viewModel.autoCaptureLocation
             val autoCaptureIntervalText = viewModel.autoCaptureIntervalText
+            val runInBackground = viewModel.runInBackground
             val enabledColor = MaterialTheme.colorScheme.onBackground
             val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
             val textColor = if (autoCaptureLocation) enabledColor else disabledColor
+            val subTextColor = if (autoCaptureLocation) MaterialTheme.colorScheme.onSurfaceVariant else disabledColor
+
+            val notificationPermissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission()
+            ) { _ -> }
 
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .clickable { viewModel.setAutoCaptureLocation(context, !autoCaptureLocation) }
+                    .clickable {
+                        val next = !autoCaptureLocation
+                        if (next && runInBackground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        viewModel.setAutoCaptureLocation(context, next)
+                    }
                     .padding(horizontal = 20.dp, vertical = 14.dp),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
@@ -672,7 +687,14 @@ fun SettingsScreen(
 
                 Switch(
                     checked = autoCaptureLocation,
-                    onCheckedChange = { viewModel.setAutoCaptureLocation(context, it) }
+                    onCheckedChange = { next ->
+                        if (next && runInBackground && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        viewModel.setAutoCaptureLocation(context, next)
+                    }
                 )
             }
 
@@ -736,6 +758,54 @@ fun SettingsScreen(
                     text = "minutes",
                     style = MaterialTheme.typography.bodyLarge,
                     color = textColor
+                )
+            }
+
+            // Setting 3: "Run in background" (runs as foreground service when app loses focus)
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(enabled = autoCaptureLocation) {
+                        val next = !runInBackground
+                        if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        viewModel.setRunInBackground(context, next)
+                    }
+                    .padding(horizontal = 20.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 16.dp)
+                ) {
+                    Text(
+                        text = "Run in background",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = textColor
+                    )
+                    Text(
+                        text = "Foreground service keeps capturing when app is closed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = subTextColor
+                    )
+                }
+
+                Switch(
+                    checked = runInBackground,
+                    enabled = autoCaptureLocation,
+                    onCheckedChange = { next ->
+                        if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        viewModel.setRunInBackground(context, next)
+                    }
                 )
             }
 

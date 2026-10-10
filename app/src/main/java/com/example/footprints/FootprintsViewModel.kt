@@ -18,19 +18,21 @@ import kotlin.coroutines.resume
 
 class FootprintsViewModel : ViewModel() {
     companion object {
-        private const val PREFS_NAME = "footprints_settings"
-        private const val KEY_SHOW_MAP_IMAGE = "show_map_image"
-        private const val KEY_AUTO_CAPTURE_LOCATION = "auto_capture_location"
-        private const val KEY_AUTO_CAPTURE_INTERVAL_MINUTES = "auto_capture_interval_minutes"
-        private const val KEY_AUTO_SEND_LOCATION = "auto_send_location"
-        private const val KEY_AUTO_SEND_INTERVAL_MINUTES = "auto_send_interval_minutes"
+        const val PREFS_NAME = "footprints_settings"
+        const val KEY_SHOW_MAP_IMAGE = "show_map_image"
+        const val KEY_AUTO_CAPTURE_LOCATION = "auto_capture_location"
+        const val KEY_AUTO_CAPTURE_INTERVAL_MINUTES = "auto_capture_interval_minutes"
+        const val KEY_AUTO_SEND_LOCATION = "auto_send_location"
+        const val KEY_AUTO_SEND_INTERVAL_MINUTES = "auto_send_interval_minutes"
+        const val KEY_RUN_IN_BACKGROUND = "run_in_background"
     }
 
-    val records = mutableStateListOf<LocationRecord>()
+    val records get() = FootprintsRepository.records
     var isLoading by mutableStateOf(false)
     var statusMessage by mutableStateOf<String?>(null)
     var showMapImage by mutableStateOf(true)
     var autoCaptureLocation by mutableStateOf(false)
+    var runInBackground by mutableStateOf(false)
     var autoCaptureIntervalText by mutableStateOf("15")
 
     var autoSendLocation: Boolean
@@ -47,9 +49,14 @@ class FootprintsViewModel : ViewModel() {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         showMapImage = prefs.getBoolean(KEY_SHOW_MAP_IMAGE, true)
         autoCaptureLocation = prefs.getBoolean(KEY_AUTO_CAPTURE_LOCATION, prefs.getBoolean(KEY_AUTO_SEND_LOCATION, false))
+        runInBackground = prefs.getBoolean(KEY_RUN_IN_BACKGROUND, false)
         autoCaptureIntervalText = prefs.getString(KEY_AUTO_CAPTURE_INTERVAL_MINUTES, prefs.getString(KEY_AUTO_SEND_INTERVAL_MINUTES, "15")) ?: "15"
         if (autoCaptureLocation) {
-            startAutoCaptureLoop(context.applicationContext, immediateCapture = false)
+            if (runInBackground) {
+                LocationTrackingService.start(context.applicationContext, immediateCapture = false)
+            } else {
+                startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = false)
+            }
         }
     }
 
@@ -57,6 +64,23 @@ class FootprintsViewModel : ViewModel() {
         showMapImage = enabled
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_SHOW_MAP_IMAGE, enabled).apply()
+    }
+
+    fun setRunInBackground(context: Context, enabled: Boolean) {
+        runInBackground = enabled
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(KEY_RUN_IN_BACKGROUND, enabled).apply()
+        if (autoCaptureLocation) {
+            if (enabled) {
+                stopInAppAutoCaptureLoop()
+                LocationTrackingService.start(context.applicationContext, immediateCapture = false)
+                Toast.makeText(context, "Background tracking enabled (foreground service)", Toast.LENGTH_SHORT).show()
+            } else {
+                LocationTrackingService.stop(context.applicationContext)
+                startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = false)
+                Toast.makeText(context, "Background tracking disabled (in-app only)", Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     fun setAutoCaptureLocation(context: Context, enabled: Boolean) {
@@ -67,9 +91,16 @@ class FootprintsViewModel : ViewModel() {
             .putBoolean(KEY_AUTO_SEND_LOCATION, enabled)
             .apply()
         if (enabled) {
-            startAutoCaptureLoop(context.applicationContext, immediateCapture = true)
+            if (runInBackground) {
+                stopInAppAutoCaptureLoop()
+                LocationTrackingService.start(context.applicationContext, immediateCapture = true)
+            } else {
+                LocationTrackingService.stop(context.applicationContext)
+                startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = true)
+            }
         } else {
-            stopAutoCaptureLoop(context)
+            stopInAppAutoCaptureLoop(context)
+            LocationTrackingService.stop(context.applicationContext)
         }
     }
 
@@ -101,13 +132,17 @@ class FootprintsViewModel : ViewModel() {
             .putString(KEY_AUTO_SEND_INTERVAL_MINUTES, cleaned)
             .apply()
         if (autoCaptureLocation) {
-            startAutoCaptureLoop(context.applicationContext, immediateCapture = false)
+            if (runInBackground) {
+                LocationTrackingService.start(context.applicationContext, immediateCapture = false)
+            } else {
+                startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = false)
+            }
         }
     }
 
     fun setAutoSendIntervalText(context: Context, text: String) = setAutoCaptureIntervalText(context, text)
 
-    fun startAutoCaptureLoop(context: Context, immediateCapture: Boolean = true) {
+    fun startInAppAutoCaptureLoop(context: Context, immediateCapture: Boolean = true) {
         autoCaptureJob?.cancel()
         val appContext = context.applicationContext
         autoCaptureJob = viewModelScope.launch {
@@ -134,13 +169,18 @@ class FootprintsViewModel : ViewModel() {
         }
     }
 
-    fun stopAutoCaptureLoop(context: Context? = null) {
+    fun startAutoCaptureLoop(context: Context, immediateCapture: Boolean = true) =
+        startInAppAutoCaptureLoop(context, immediateCapture)
+
+    fun stopInAppAutoCaptureLoop(context: Context? = null) {
         autoCaptureJob?.cancel()
         autoCaptureJob = null
         if (context != null) {
             Toast.makeText(context, "Auto-capture turned off", Toast.LENGTH_SHORT).show()
         }
     }
+
+    fun stopAutoCaptureLoop(context: Context? = null) = stopInAppAutoCaptureLoop(context)
 
     private suspend fun performAutoCapture(context: Context) {
         val record = suspendCancellableCoroutine<LocationRecord?> { cont ->
