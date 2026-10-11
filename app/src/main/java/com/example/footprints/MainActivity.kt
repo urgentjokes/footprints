@@ -23,6 +23,8 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
@@ -58,7 +60,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -411,7 +415,8 @@ fun MainFootprintsScreen(
                         LocationCard(
                             index = index + 1,
                             record = item,
-                            showMap = viewModel.showMapImage
+                            showMap = viewModel.showMapImage,
+                            onDelete = { rec -> viewModel.deleteRecord(context, rec) }
                         )
                     }
                 }
@@ -1013,182 +1018,284 @@ fun FootprintButton(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun LocationCard(
     index: Int,
     record: LocationRecord,
-    showMap: Boolean = true
+    showMap: Boolean = true,
+    onDelete: ((LocationRecord) -> Unit)? = null
 ) {
     val context = LocalContext.current
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(18.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "ENTRY #$index",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = record.timestamp,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
+    var showContextMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "Latitude:  %+.6f°".format(record.latitude),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium
-            )
-            Text(
-                text = "Longitude: %+.6f°".format(record.longitude),
-                fontFamily = FontFamily.Monospace,
-                fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.Medium
-            )
-
-            // Accompanying Map Image with Red Pin (like Google Maps)
-            if (showMap) {
-                Spacer(modifier = Modifier.height(12.dp))
-                val imageModel = remember(record.mapImagePath, record.latitude, record.longitude) {
-                    record.mapImagePath?.let { java.io.File(it) }
-                        ?: MapHelper.getMapImageUrl(context, record.latitude, record.longitude)
-                }
-
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MaterialTheme.colorScheme.surface)
-                        .clickable {
-                            val uri = "geo:${record.latitude},${record.longitude}?q=${record.latitude},${record.longitude}(Footprint #$index)".toUri()
-                            val intent = Intent(Intent.ACTION_VIEW, uri)
-                            try {
-                                context.startActivity(intent)
-                            } catch (_: Exception) {
-                                val webUri = "https://maps.google.com/?q=${record.latitude},${record.longitude}".toUri()
-                                context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
-                            }
-                        }
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("Delete Footprint #$index?") },
+            text = { Text("Are you sure you want to delete this footprint from your journey? This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirmDialog = false
+                        onDelete?.invoke(record)
+                    }
                 ) {
-                    SubcomposeAsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(imageModel)
-                            .setHeader("User-Agent", "FootprintsApp/1.0 (Android)")
-                            .crossfade(true)
-                            .build(),
-                        contentDescription = "Map location preview",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                        loading = {
-                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(28.dp),
-                                    strokeWidth = 2.dp,
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                        },
-                        error = {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .background(MaterialTheme.colorScheme.surface),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = "Tap to open Google Maps",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.outline
-                                )
-                            }
-                        }
-                    )
-
-                    // Precise Location Marker Pin aligned over exact GPS coordinates
-                    val tileFrac = remember(record.latitude, record.longitude) {
-                        MapHelper.getTileFraction(record.latitude, record.longitude)
-                    }
-                    val pinAlignment = remember(tileFrac) {
-                        androidx.compose.ui.BiasAlignment(
-                            horizontalBias = (tileFrac.x - 0.5f) * 2f,
-                            verticalBias = (tileFrac.y - 0.5f) * 2f
-                        )
-                    }
-
-                    Icon(
-                        imageVector = Icons.Default.Place,
-                        contentDescription = "Location Pin",
-                        tint = Color(0xFFE53935),
-                        modifier = Modifier
-                            .size(36.dp)
-                            .align(pinAlignment)
-                            .offset(y = (-14).dp)
-                    )
-
-                    // Pill Badge at bottom right: "Show location on Google Maps ↗"
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.72f),
-                        shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier
-                            .align(Alignment.BottomEnd)
-                            .padding(8.dp)
-                    ) {
-                        Text(
-                            text = "Show location on Google Maps ↗",
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                    }
+                    Text("Delete", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("Cancel")
                 }
             }
+        )
+    }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
+    Box(
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(16.dp))
+                .combinedClickable(
+                    onClick = { },
+                    onLongClick = { showContextMenu = true }
+                ),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        ) {
+            Column(
+                modifier = Modifier.padding(18.dp)
             ) {
-                Text(
-                    text = "Accuracy: ±%.1f m".format(record.accuracy),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
-                if (record.altitude != null && record.altitude != 0.0) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Text(
-                        text = "Alt: %.1f m".format(record.altitude),
+                        text = "ENTRY #$index",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = record.timestamp,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Text(
+                    text = "Latitude:  %+.6f°".format(record.latitude),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+                Text(
+                    text = "Longitude: %+.6f°".format(record.longitude),
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 15.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontWeight = FontWeight.Medium
+                )
+
+                // Accompanying Map Image with Red Pin (like Google Maps)
+                if (showMap) {
+                    Spacer(modifier = Modifier.height(12.dp))
+                    val imageModel = remember(record.mapImagePath, record.latitude, record.longitude) {
+                        record.mapImagePath?.let { java.io.File(it) }
+                            ?: MapHelper.getMapImageUrl(context, record.latitude, record.longitude)
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(160.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MaterialTheme.colorScheme.surface)
+                            .combinedClickable(
+                                onClick = {
+                                    val uri = "geo:${record.latitude},${record.longitude}?q=${record.latitude},${record.longitude}(Footprint #$index)".toUri()
+                                    val intent = Intent(Intent.ACTION_VIEW, uri)
+                                    try {
+                                        context.startActivity(intent)
+                                    } catch (_: Exception) {
+                                        val webUri = "https://maps.google.com/?q=${record.latitude},${record.longitude}".toUri()
+                                        context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                                    }
+                                },
+                                onLongClick = { showContextMenu = true }
+                            )
+                    ) {
+                        SubcomposeAsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(imageModel)
+                                .setHeader("User-Agent", "FootprintsApp/1.0 (Android)")
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "Map location preview",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                            loading = {
+                                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(28.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                            },
+                            error = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(MaterialTheme.colorScheme.surface),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "Tap to open Google Maps",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
+                        )
+
+                        // Precise Location Marker Pin aligned over exact GPS coordinates
+                        val tileFrac = remember(record.latitude, record.longitude) {
+                            MapHelper.getTileFraction(record.latitude, record.longitude)
+                        }
+                        val pinAlignment = remember(tileFrac) {
+                            androidx.compose.ui.BiasAlignment(
+                                horizontalBias = (tileFrac.x - 0.5f) * 2f,
+                                verticalBias = (tileFrac.y - 0.5f) * 2f
+                            )
+                        }
+
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = "Location Pin",
+                            tint = Color(0xFFE53935),
+                            modifier = Modifier
+                                .size(36.dp)
+                                .align(pinAlignment)
+                                .offset(y = (-14).dp)
+                        )
+
+                        // Pill Badge at bottom right: "Show location on Google Maps ↗"
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.72f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .align(Alignment.BottomEnd)
+                                .padding(8.dp)
+                        ) {
+                            Text(
+                                text = "Show location on Google Maps ↗",
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "Accuracy: ±%.1f m".format(record.accuracy),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.outline
+                    )
+                    if (record.altitude != null && record.altitude != 0.0) {
+                        Text(
+                            text = "Alt: %.1f m".format(record.altitude),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
+                    Text(
+                        text = "via ${record.provider}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.outline
                     )
                 }
-                Text(
-                    text = "via ${record.provider}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.outline
-                )
             }
+        }
+
+        DropdownMenu(
+            expanded = showContextMenu,
+            onDismissRequest = { showContextMenu = false }
+        ) {
+            DropdownMenuItem(
+                text = { Text("Share") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Share,
+                        contentDescription = "Share",
+                        tint = MaterialTheme.colorScheme.onSurface
+                    )
+                },
+                onClick = {
+                    showContextMenu = false
+                    val shareText = SmsHelper.buildLocationMessageBody(record)
+                    val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                        type = "text/plain"
+                        putExtra(Intent.EXTRA_SUBJECT, "Footprint #$index")
+                        putExtra(Intent.EXTRA_TEXT, shareText)
+                    }
+                    context.startActivity(Intent.createChooser(sendIntent, "Share Footprint #$index"))
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Outlined.Delete,
+                        contentDescription = "Delete",
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                },
+                onClick = {
+                    showContextMenu = false
+                    showDeleteConfirmDialog = true
+                }
+            )
+            DropdownMenuItem(
+                text = { Text("View on Google Maps") },
+                leadingIcon = {
+                    Icon(
+                        imageVector = Icons.Default.Place,
+                        contentDescription = "View on Google Maps",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
+                },
+                onClick = {
+                    showContextMenu = false
+                    val uri = "geo:${record.latitude},${record.longitude}?q=${record.latitude},${record.longitude}(Footprint #$index)".toUri()
+                    val intent = Intent(Intent.ACTION_VIEW, uri)
+                    try {
+                        context.startActivity(intent)
+                    } catch (_: Exception) {
+                        val webUri = "https://maps.google.com/?q=${record.latitude},${record.longitude}".toUri()
+                        context.startActivity(Intent(Intent.ACTION_VIEW, webUri))
+                    }
+                }
+            )
         }
     }
 }

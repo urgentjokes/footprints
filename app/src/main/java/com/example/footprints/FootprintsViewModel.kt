@@ -340,4 +340,13 @@ class FootprintsViewModel : ViewModel() {
             SmsHelper.textLocation(context, lastRecord, phoneNumber)
         }
     }
+
+    fun deleteRecord(context: Context, record: LocationRecord) {
+        records.removeAll { it.id == record.id }
+        LocationHelper.rewriteActiveJourneyRecords(context, records)
+        record.mapImagePath?.let { path ->
+            try { java.io.File(path).delete() } catch (_: Exception) {}
+        }
+        Toast.makeText(context, "Footprint deleted", Toast.LENGTH_SHORT).show()
+    }
 }

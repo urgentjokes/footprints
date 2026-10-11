@@ -104,6 +104,32 @@ object LocationHelper {
     }
 
     /**
+     * Rewrites the active journey CSV and text log files with the remaining records
+     * after deletion of an entry.
+     */
+    fun rewriteActiveJourneyRecords(context: Context, remainingRecords: List<LocationRecord>) {
+        try {
+            val csvFile = getCsvLogFile(context)
+            val textFile = getLogFile(context)
+            if (remainingRecords.isEmpty()) {
+                if (csvFile.exists()) csvFile.delete()
+                if (textFile.exists()) textFile.delete()
+            } else {
+                val csvBuilder = StringBuilder(CSV_HEADER)
+                val txtBuilder = StringBuilder()
+                for (rec in remainingRecords) {
+                    csvBuilder.append(rec.toCsvRow()).append("\n")
+                    txtBuilder.append(rec.toFormattedLog()).append("\n\n")
+                }
+                csvFile.writeText(csvBuilder.toString())
+                textFile.writeText(txtBuilder.toString())
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    /**
      * Reads active journey records from current CSV log file on disk.
      */
     fun loadActiveJourneyRecords(context: Context): List<LocationRecord> {
