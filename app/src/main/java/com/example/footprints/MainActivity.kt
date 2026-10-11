@@ -55,8 +55,10 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.outlined.HelpOutline
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Place
+import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -291,6 +293,20 @@ fun MainFootprintsScreen(
                             tint = MaterialTheme.colorScheme.primary
                         )
                     }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(
+                            imageVector = Icons.Outlined.Settings,
+                            contentDescription = "Settings",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
+                    IconButton(onClick = { showHelpDialog = true }) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Outlined.HelpOutline,
+                            contentDescription = "Help",
+                            tint = MaterialTheme.colorScheme.onBackground
+                        )
+                    }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(
@@ -322,13 +338,6 @@ fun MainFootprintsScreen(
                                 onClick = {
                                     menuExpanded = false
                                     Toast.makeText(context, "Share whole journey (coming soon)", Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Settings") },
-                                onClick = {
-                                    menuExpanded = false
-                                    onNavigateToSettings()
                                 }
                             )
                             DropdownMenuItem(
