@@ -104,10 +104,51 @@ object LocationHelper {
     }
 
     /**
+     * Reads active journey records from current CSV log file on disk.
+     */
+    fun loadActiveJourneyRecords(context: Context): List<LocationRecord> {
+        val file = getCsvLogFile(context)
+        if (!file.exists()) return emptyList()
+        val list = mutableListOf<LocationRecord>()
+        try {
+            file.useLines { lines ->
+                var isFirst = true
+                for (line in lines) {
+                    if (isFirst) {
+                        isFirst = false
+                        continue // skip CSV header
+                    }
+                    val trimmed = line.trim()
+                    if (trimmed.isEmpty()) continue
+                    val parts = trimmed.split(",")
+                    if (parts.size >= 3) {
+                        val time = parts[0].trim().removeSurrounding("\"")
+                        val lat = parts[1].trim().toDoubleOrNull()
+                        val lon = parts[2].trim().toDoubleOrNull()
+                        if (lat != null && lon != null) {
+                            list.add(
+                                LocationRecord(
+                                    id = System.currentTimeMillis() + list.size,
+                                    timestamp = time,
+                                    latitude = lat,
+                                    longitude = lon
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return list
+    }
+
+    /**
      * Saves the current CSV journey log to Android Documents/Footprints log folder.
      * Returns the relative or display path of the saved file, or null if no data to save.
      */
-    fun saveCurrentJourney(context: Context): String? {
+    fun exportCurrentJourneySnapshot(context: Context): String? {
         val currentFile = getCsvLogFile(context)
         if (!currentFile.exists() || currentFile.length() == 0L) return null
 
@@ -163,12 +204,17 @@ object LocationHelper {
             e.printStackTrace()
         }
 
-        // 3. Reset active journey files
-        currentFile.delete()
+        return savedPathDisplay ?: "Documents/$DOCUMENTS_SUBFOLDER/$fileName"
+    }
+
+    fun saveCurrentJourney(context: Context): String? {
+        val path = exportCurrentJourneySnapshot(context)
+        // Reset active journey files upon ending/saving journey
+        val currentFile = getCsvLogFile(context)
+        if (currentFile.exists()) currentFile.delete()
         val textFile = getLogFile(context)
         if (textFile.exists()) textFile.delete()
-
-        return savedPathDisplay ?: "Documents/$DOCUMENTS_SUBFOLDER/$fileName"
+        return path
     }
 
     fun discardCurrentJourney(context: Context) {

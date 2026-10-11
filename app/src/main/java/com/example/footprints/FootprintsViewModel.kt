@@ -55,12 +55,16 @@ class FootprintsViewModel : ViewModel() {
         runInBackground = prefs.getBoolean(KEY_RUN_IN_BACKGROUND, false)
         listenForBluetoothShutter = prefs.getBoolean(KEY_BLUETOOTH_SHUTTER, true)
         autoCaptureIntervalText = prefs.getString(KEY_AUTO_CAPTURE_INTERVAL_MINUTES, prefs.getString(KEY_AUTO_SEND_INTERVAL_MINUTES, "15")) ?: "15"
-        if (autoCaptureLocation) {
-            if (runInBackground) {
-                LocationTrackingService.start(context.applicationContext, immediateCapture = false)
-            } else {
-                startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = false)
+        if (records.isEmpty()) {
+            val savedRecords = LocationHelper.loadActiveJourneyRecords(context)
+            if (savedRecords.isNotEmpty()) {
+                records.addAll(savedRecords)
             }
+        }
+        if (runInBackground) {
+            LocationTrackingService.start(context.applicationContext, immediateCapture = false)
+        } else if (autoCaptureLocation) {
+            startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = false)
         }
     }
 
@@ -87,15 +91,22 @@ class FootprintsViewModel : ViewModel() {
         runInBackground = enabled
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_RUN_IN_BACKGROUND, enabled).apply()
-        if (autoCaptureLocation) {
-            if (enabled) {
-                stopInAppAutoCaptureLoop()
-                LocationTrackingService.start(context.applicationContext, immediateCapture = false)
-                Toast.makeText(context, "Background tracking enabled (foreground service)", Toast.LENGTH_SHORT).show()
+        if (enabled) {
+            stopInAppAutoCaptureLoop()
+            LocationTrackingService.start(context.applicationContext, immediateCapture = false)
+            val msg = if (autoCaptureLocation) {
+                "Background tracking active (auto-capture & remote shutter)"
             } else {
-                LocationTrackingService.stop(context.applicationContext)
+                "Background service active (ready for Bluetooth shutter)"
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+        } else {
+            LocationTrackingService.stop(context.applicationContext)
+            if (autoCaptureLocation) {
                 startInAppAutoCaptureLoop(context.applicationContext, immediateCapture = false)
-                Toast.makeText(context, "Background tracking disabled (in-app only)", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, "Running in-app only", Toast.LENGTH_SHORT).show()
+            } else {
+                Toast.makeText(context, "Background service stopped", Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -117,7 +128,12 @@ class FootprintsViewModel : ViewModel() {
             }
         } else {
             stopInAppAutoCaptureLoop(context)
-            LocationTrackingService.stop(context.applicationContext)
+            if (runInBackground) {
+                LocationTrackingService.start(context.applicationContext, immediateCapture = false)
+                Toast.makeText(context, "Auto-capture stopped (background shutter remains active)", Toast.LENGTH_SHORT).show()
+            } else {
+                LocationTrackingService.stop(context.applicationContext)
+            }
         }
     }
 

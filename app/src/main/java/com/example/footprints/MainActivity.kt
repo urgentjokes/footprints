@@ -164,7 +164,8 @@ class MainActivity : ComponentActivity() {
 
 enum class AppScreen {
     MAIN,
-    SETTINGS
+    SETTINGS,
+    MAP
 }
 
 @Composable
@@ -180,13 +181,26 @@ fun FootprintsApp(viewModel: FootprintsViewModel = viewModel()) {
         AppScreen.MAIN -> {
             MainFootprintsScreen(
                 viewModel = viewModel,
-                onNavigateToSettings = { currentScreen = AppScreen.SETTINGS }
+                onNavigateToSettings = { currentScreen = AppScreen.SETTINGS },
+                onNavigateToMap = { currentScreen = AppScreen.MAP }
             )
         }
         AppScreen.SETTINGS -> {
             SettingsScreen(
                 viewModel = viewModel,
                 onNavigateBack = { currentScreen = AppScreen.MAIN }
+            )
+        }
+        AppScreen.MAP -> {
+            JourneyMapScreen(
+                records = viewModel.records,
+                onNavigateBack = { currentScreen = AppScreen.MAIN },
+                onOpenInGoogleMaps = {
+                    val opened = GoogleMapsHelper.openJourneyInGoogleMaps(context)
+                    if (!opened) {
+                        Toast.makeText(context, "No journey footprints recorded yet.", Toast.LENGTH_SHORT).show()
+                    }
+                }
             )
         }
     }
@@ -196,7 +210,8 @@ fun FootprintsApp(viewModel: FootprintsViewModel = viewModel()) {
 @Composable
 fun MainFootprintsScreen(
     viewModel: FootprintsViewModel,
-    onNavigateToSettings: () -> Unit
+    onNavigateToSettings: () -> Unit,
+    onNavigateToMap: () -> Unit
 ) {
     val context = LocalContext.current
     val records = viewModel.records
@@ -269,6 +284,13 @@ fun MainFootprintsScreen(
                     titleContentColor = MaterialTheme.colorScheme.onBackground
                 ),
                 actions = {
+                    IconButton(onClick = onNavigateToMap) {
+                        Icon(
+                            imageVector = Icons.Default.Place,
+                            contentDescription = "Journey Map",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
                     Box {
                         IconButton(onClick = { menuExpanded = true }) {
                             Icon(
@@ -282,6 +304,13 @@ fun MainFootprintsScreen(
                             onDismissRequest = { menuExpanded = false }
                         ) {
                             DropdownMenuItem(
+                                text = { Text("View Journey Map") },
+                                onClick = {
+                                    menuExpanded = false
+                                    onNavigateToMap()
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text("Share current location") },
                                 onClick = {
                                     menuExpanded = false
@@ -293,13 +322,6 @@ fun MainFootprintsScreen(
                                 onClick = {
                                     menuExpanded = false
                                     Toast.makeText(context, "Share whole journey (coming soon)", Toast.LENGTH_SHORT).show()
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Export log") },
-                                onClick = {
-                                    menuExpanded = false
-                                    Toast.makeText(context, "Export log (coming soon)", Toast.LENGTH_SHORT).show()
                                 }
                             )
                             DropdownMenuItem(
@@ -741,18 +763,69 @@ fun SettingsScreen(
                 color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
             )
 
-            // Setting 2: "Automatically capture location" with on-off switch
-            val autoCaptureLocation = viewModel.autoCaptureLocation
-            val autoCaptureIntervalText = viewModel.autoCaptureIntervalText
+            // Setting 3: "Run in background" (independent foreground service for shutter & tracking)
             val runInBackground = viewModel.runInBackground
-            val enabledColor = MaterialTheme.colorScheme.onBackground
-            val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
-            val textColor = if (autoCaptureLocation) enabledColor else disabledColor
-            val subTextColor = if (autoCaptureLocation) MaterialTheme.colorScheme.onSurfaceVariant else disabledColor
 
             val notificationPermissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission()
             ) { _ -> }
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable {
+                        val next = !runInBackground
+                        if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        viewModel.setRunInBackground(context, next)
+                    }
+                    .padding(horizontal = 20.dp, vertical = 14.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 16.dp)
+                ) {
+                    Text(
+                        text = "Run in background",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = "Keep foreground service active for remote clicker and tracking when app is closed",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Switch(
+                    checked = runInBackground,
+                    onCheckedChange = { next ->
+                        if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                            }
+                        }
+                        viewModel.setRunInBackground(context, next)
+                    }
+                )
+            }
+
+            HorizontalDivider(
+                color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+            )
+
+            // Setting 4: "Automatically capture location" with on-off switch
+            val autoCaptureLocation = viewModel.autoCaptureLocation
+            val autoCaptureIntervalText = viewModel.autoCaptureIntervalText
+            val enabledColor = MaterialTheme.colorScheme.onBackground
+            val disabledColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f)
+            val textColor = if (autoCaptureLocation) enabledColor else disabledColor
 
             Row(
                 modifier = Modifier
@@ -770,11 +843,23 @@ fun SettingsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "Automatically capture location",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground
-                )
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(end = 16.dp)
+                ) {
+                    Text(
+                        text = "Automatically capture location",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = if (runInBackground) "Captures periodically even when app is closed"
+                               else "Captures periodically while app is open",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 Switch(
                     checked = autoCaptureLocation,
@@ -849,54 +934,6 @@ fun SettingsScreen(
                     text = "minutes",
                     style = MaterialTheme.typography.bodyLarge,
                     color = textColor
-                )
-            }
-
-            // Setting 3: "Run in background" (runs as foreground service when app loses focus)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable(enabled = autoCaptureLocation) {
-                        val next = !runInBackground
-                        if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }
-                        viewModel.setRunInBackground(context, next)
-                    }
-                    .padding(horizontal = 20.dp, vertical = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(
-                    modifier = Modifier
-                        .weight(1f)
-                        .padding(end = 16.dp)
-                ) {
-                    Text(
-                        text = "Run in background",
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = textColor
-                    )
-                    Text(
-                        text = "Foreground service keeps capturing when app is closed",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = subTextColor
-                    )
-                }
-
-                Switch(
-                    checked = runInBackground,
-                    enabled = autoCaptureLocation,
-                    onCheckedChange = { next ->
-                        if (next && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-                                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                            }
-                        }
-                        viewModel.setRunInBackground(context, next)
-                    }
                 )
             }
 
